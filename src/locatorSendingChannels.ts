@@ -1,5 +1,5 @@
 import { checkSum1B } from './checkSum1B';
-import { IBinaryCommand, Utils } from './lib';
+import { IBinaryCommand, IGatewayResult, Utils } from '@lib';
 
 const cmdSetLocatorSendingChannel: IBinaryCommand = {
   cmd: 0x23,
@@ -32,19 +32,28 @@ export async function getLocatorSendingChannels(
   }> = [];
 
   const gateways = (() => {
+    const locators: IGatewayResult[] = [];
     const now = new Date().getTime();
     const ts = now - utils.projectEnv.locatorLifeTime;
-    const data = utils.packGatewaysByAddr(utils.activeLocators, ts);
-    return data;
+    const buf = utils.ca.getLocatorsBuffer(ts);
+    if (buf.length > 5) {
+      const bsize = buf.readUint16LE(3);
+      const n = (buf.length - 5) / bsize;
+      for (let i = 0; i < n; ++i) {
+        const l = utils.parseLocatorResult(buf, i * bsize + 5, ts);
+        locators.push(l);
+      }
+    }
+    return locators;
   })();
 
-  for (const [k, v] of Object.entries(gateways)) {
+  for (const v of gateways) {
     const modelName = v.info && v.info.modelName;
     if (
       (modelName &&
         (modelName.startsWith('CL-GA25') || modelName.startsWith('CL-GA30')))
     ) {
-      const [ip, portStr] = k.split(':');
+      const [ip, portStr] = v.ip.split(':');
       const port = portStr ? ~~portStr : 8256;
       const ex = locators.find(x => x.mac === v.mac);
       if (ex) {
@@ -64,7 +73,7 @@ export async function getLocatorSendingChannels(
   await Promise.all(
     locators.map(async l => {
       try {
-        const res = await udpGetLocatorSendingChannel(utils, [l.ip, l.port].join(':'));
+        const res = await udpGetLocatorSendingChannel(utils, l.mac);
         for (const [k, v] of Object.entries(res)) l[k] = v;
       } catch (e) {
         l.errMsg = e;
@@ -74,12 +83,12 @@ export async function getLocatorSendingChannels(
   return locators;
 }
 
-async function udpGetLocatorSendingChannel(utils: Utils, addr: string) {
+async function udpGetLocatorSendingChannel(utils: Utils, mac: string) {
   const { take, timeout, catchError } = utils.modules.rxjsOperators;
   const { throwError, TimeoutError } = utils.modules.rxjs;
 
   const res = await utils.udp
-    .sendBinaryCmd(cmdGetLocatorSendingChannel, null, [addr])
+    .sendBinaryCmd(mac, cmdGetLocatorSendingChannel)
     .pipe(
       timeout(2000),
       catchError(err => {
@@ -124,19 +133,28 @@ export async function setLocatorSendingChannels(
   }> = [];
 
   const gateways = (() => {
+    const locators: IGatewayResult[] = [];
     const now = new Date().getTime();
     const ts = now - utils.projectEnv.locatorLifeTime;
-    const data = utils.packGatewaysByAddr(utils.activeLocators, ts);
-    return data;
+    const buf = utils.ca.getLocatorsBuffer(ts);
+    if (buf.length > 5) {
+      const bsize = buf.readUint16LE(3);
+      const n = (buf.length - 5) / bsize;
+      for (let i = 0; i < n; ++i) {
+        const l = utils.parseLocatorResult(buf, i * bsize + 5, ts);
+        locators.push(l);
+      }
+    }
+    return locators;
   })();
 
-  for (const [k, v] of Object.entries(gateways)) {
+  for (const v of gateways) {
     const modelName = v.info && v.info.modelName;
     if (
       (modelName &&
         (modelName.startsWith('CL-GA25') || modelName.startsWith('CL-GA30')))
     ) {
-      const [ip, portStr] = k.split(':');
+      const [ip, portStr] = v.ip.split(':');
       const port = portStr ? ~~portStr : 8256;
       const ex = locators.find(x => x.mac === v.mac);
       if (ex) {
@@ -158,7 +176,7 @@ export async function setLocatorSendingChannels(
       try {
         await udpSetLocatorSendingChannel(
           utils,
-          [l.ip, l.port].join(':'),
+          l.mac,
           body.channel,
           body.whitening,
           body.enabled
@@ -173,22 +191,21 @@ export async function setLocatorSendingChannels(
 
 async function udpSetLocatorSendingChannel(
   utils: Utils,
-  addr: string,
+  mac: string,
   channel: number,
   whitening: boolean,
   enabled: boolean
 ) {
-  const ab = new ArrayBuffer(3);
-  const u8a = new Uint8Array(ab);
-  u8a[0] = channel - 2400;
-  u8a[1] = ~~whitening;
-  u8a[2] = ~~enabled;
+  const b = Buffer.alloc(3);
+  b[0] = channel - 2400;
+  b[1] = ~~whitening;
+  b[2] = ~~enabled;
 
   const { take, timeout, catchError } = utils.modules.rxjsOperators;
   const { throwError, TimeoutError } = utils.modules.rxjs;
 
   const res = await utils.udp
-    .sendBinaryCmd(cmdSetLocatorSendingChannel, null, [addr], ab)
+    .sendBinaryCmd(mac, cmdSetLocatorSendingChannel, b)
     .pipe(
       timeout(2000),
       catchError(err => {
