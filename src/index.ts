@@ -12,9 +12,6 @@ export async function init(self: Plugin, utils: Utils) {
     return config.apiPrefix + p;
   };
   self.status.status = 'idle';
-  setInterval(() => {
-    utils.updateStatus(self);
-  }, 1000);
 
   const errMsgBuzy = 'Busy now. Try later!';
 
@@ -30,7 +27,6 @@ export async function init(self: Plugin, utils: Utils) {
         return;
       }
       self.status.status = 'requesting';
-      utils.updateStatus(self);
       try {
         const res = await getLocatorSendingChannels(utils);
         ctx.status = 200;
@@ -41,7 +37,6 @@ export async function init(self: Plugin, utils: Utils) {
         ctx.body = e;
       }
       self.status.status = 'idle';
-      utils.updateStatus(self);
     });
 
     router.post('/locator-sending-channels', async (ctx: Context) => {
@@ -55,7 +50,6 @@ export async function init(self: Plugin, utils: Utils) {
         return;
       }
       self.status.status = 'requesting';
-      utils.updateStatus(self);
       try {
         const res = await setLocatorSendingChannels(utils, requestBody);
         ctx.status = 200;
@@ -66,7 +60,6 @@ export async function init(self: Plugin, utils: Utils) {
         ctx.body = e;
       }
       self.status.status = 'idle';
-      utils.updateStatus(self);
     });
 
   })
